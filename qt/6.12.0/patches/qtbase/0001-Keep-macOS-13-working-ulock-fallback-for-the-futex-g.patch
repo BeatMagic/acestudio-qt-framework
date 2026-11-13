@@ -1,0 +1,208 @@
+From 9346b40c6e6f4b990720f50c44cd42b4ba8b9d6a Mon Sep 17 00:00:00 2001
+From: shine5402 <14089306+shine5402@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 12:48:04 +0800
+Subject: [PATCH] Keep macOS 13 working: ulock fallback for the futex, guard
+ QCocoaScreen::grabWindow
+
+Qt 6.12 raised its macOS floor to 14. Two places in qtbase stop a build
+with a macOS 13 deployment target from running there:
+
+- The Darwin futex calls os_sync_wait_on_address and friends, which need
+  macOS 14.4. Below that, fall back to the __ulock_* calls Qt used
+  through 6.11, chosen at run time with __builtin_available. As before,
+  not for App Store builds.
+- QCocoaScreen::grabWindow uses ScreenCaptureKit calls that need macOS
+  14.4. The CGDisplayCreateImageForRect path Qt used through 6.11 is gone
+  from the SDK, so below 14.4 it returns a null pixmap with a warning.
+---
+ src/corelib/thread/qfutex_mac_p.h           | 112 ++++++++++++++++----
+ src/plugins/platforms/cocoa/qcocoascreen.h  |   3 +
+ src/plugins/platforms/cocoa/qcocoascreen.mm |  10 ++
+ 3 files changed, 107 insertions(+), 18 deletions(-)
+
+diff --git a/src/corelib/thread/qfutex_mac_p.h b/src/corelib/thread/qfutex_mac_p.h
+index 1a41130f..1ea98c47 100644
+--- a/src/corelib/thread/qfutex_mac_p.h
++++ b/src/corelib/thread/qfutex_mac_p.h
+@@ -22,6 +22,25 @@
+ 
+ #include <os/os_sync_wait_on_address.h>
+ 
++// ACE Studio patch: keep macOS 13 working. os_sync_wait_on_address needs macOS 14.4.
++// Below that, fall back to the __ulock_* calls Qt used through 6.11 (private API,
++// present on every macOS this build targets). Not for App Store builds, as before.
++#if defined(Q_OS_MACOS) && !QT_CONFIG(appstore_compliant) \
++        && __MAC_OS_X_VERSION_MIN_REQUIRED < 140400
++#  define QT_DARWIN_FUTEX_ULOCK_FALLBACK
++extern "C" {
++// Source: https://github.com/apple-oss-distributions/xnu/blob/xnu-8792.81.2/bsd/sys/ulock.h
++// Copyright (c) 2015 Apple Inc. All rights reserved.
++extern int __ulock_wait2(uint32_t operation, void *addr, uint64_t value,
++    uint64_t timeout, uint64_t value2);
++extern int __ulock_wake(uint32_t operation, void *addr, uint64_t wake_value);
++#define UL_COMPARE_AND_WAIT             1
++#define UL_COMPARE_AND_WAIT64           5
++#define ULF_WAKE_ALL                    0x00000100
++#define ULF_NO_ERRNO                    0x01000000
++} // extern "C"
++#endif
++
+ #define QT_ALWAYS_USE_FUTEX
+ 
+ QT_BEGIN_NAMESPACE
+@@ -30,42 +49,99 @@ namespace QtDarwinFutex {
+ 
+ constexpr bool futexAvailable() { return true; }
+ 
++#ifdef QT_DARWIN_FUTEX_ULOCK_FALLBACK
++template <typename Atomic>
++inline uint32_t ulockOperation(Atomic &)
++{
++    return ULF_NO_ERRNO
++            | (sizeof(Atomic) == sizeof(quint32) ? UL_COMPARE_AND_WAIT : UL_COMPARE_AND_WAIT64);
++}
++#endif
++
+ template <typename Atomic>
+ inline void futexWait(Atomic &futex, typename Atomic::Type expectedValue)
+ {
+-    QtTsan::futexRelease(&futex);
+-    static_assert(sizeof(typename Atomic::Type) == 4 || sizeof(typename Atomic::Type) == 8);
+-    os_sync_wait_on_address(&futex, quint64(expectedValue), sizeof(typename Atomic::Type),
+-                            OS_SYNC_WAIT_ON_ADDRESS_NONE);
+-    QtTsan::futexAcquire(&futex);
++#ifdef QT_DARWIN_FUTEX_ULOCK_FALLBACK
++    if (__builtin_available(macOS 14.4, *))
++#endif
++    {
++        QtTsan::futexRelease(&futex);
++        static_assert(sizeof(typename Atomic::Type) == 4 || sizeof(typename Atomic::Type) == 8);
++        os_sync_wait_on_address(&futex, quint64(expectedValue), sizeof(typename Atomic::Type),
++                                OS_SYNC_WAIT_ON_ADDRESS_NONE);
++        QtTsan::futexAcquire(&futex);
++    }
++#ifdef QT_DARWIN_FUTEX_ULOCK_FALLBACK
++    else {
++        // A zero timeout means no timeout.
++        QtTsan::futexRelease(&futex);
++        __ulock_wait2(ulockOperation(futex), &futex, uint64_t(expectedValue), 0, 0);
++        QtTsan::futexAcquire(&futex);
++    }
++#endif
+ }
+ 
+ template <typename Atomic>
+ inline bool futexWait(Atomic &futex, typename Atomic::Type expectedValue, QDeadlineTimer timer)
+ {
+-    QtTsan::futexRelease(&futex);
+-    static_assert(sizeof(typename Atomic::Type) == 4 || sizeof(typename Atomic::Type) == 8);
+-    int r = os_sync_wait_on_address_with_timeout(
+-            &futex, quint64(expectedValue), sizeof(typename Atomic::Type),
+-            OS_SYNC_WAIT_ON_ADDRESS_NONE, OS_CLOCK_MACH_ABSOLUTE_TIME, timer.remainingTimeNSecs());
+-    QtTsan::futexAcquire(&futex);
+-    return r >= 0 || errno != ETIMEDOUT;
++#ifdef QT_DARWIN_FUTEX_ULOCK_FALLBACK
++    if (__builtin_available(macOS 14.4, *))
++#endif
++    {
++        QtTsan::futexRelease(&futex);
++        static_assert(sizeof(typename Atomic::Type) == 4 || sizeof(typename Atomic::Type) == 8);
++        int r = os_sync_wait_on_address_with_timeout(
++                &futex, quint64(expectedValue), sizeof(typename Atomic::Type),
++                OS_SYNC_WAIT_ON_ADDRESS_NONE, OS_CLOCK_MACH_ABSOLUTE_TIME, timer.remainingTimeNSecs());
++        QtTsan::futexAcquire(&futex);
++        return r >= 0 || errno != ETIMEDOUT;
++    }
++#ifdef QT_DARWIN_FUTEX_ULOCK_FALLBACK
++    else {
++        // __ulock_wait2 takes its timeout in nanoseconds.
++        QtTsan::futexRelease(&futex);
++        int r = __ulock_wait2(ulockOperation(futex), &futex, uint64_t(expectedValue),
++                              timer.remainingTimeNSecs(), 0);
++        QtTsan::futexAcquire(&futex);
++        return r == 0 || r != -ETIMEDOUT;
++    }
++#endif
+ }
+ 
+ template <typename Atomic>
+ inline void futexWakeAll(Atomic &futex)
+ {
+-    static_assert(sizeof(typename Atomic::Type) == 4 || sizeof(typename Atomic::Type) == 8);
+-    os_sync_wake_by_address_all(&futex, sizeof(typename Atomic::Type),
+-                                OS_SYNC_WAKE_BY_ADDRESS_NONE);
++#ifdef QT_DARWIN_FUTEX_ULOCK_FALLBACK
++    if (__builtin_available(macOS 14.4, *))
++#endif
++    {
++        static_assert(sizeof(typename Atomic::Type) == 4 || sizeof(typename Atomic::Type) == 8);
++        os_sync_wake_by_address_all(&futex, sizeof(typename Atomic::Type),
++                                    OS_SYNC_WAKE_BY_ADDRESS_NONE);
++    }
++#ifdef QT_DARWIN_FUTEX_ULOCK_FALLBACK
++    else {
++        __ulock_wake(ulockOperation(futex) | ULF_WAKE_ALL, &futex, 0);
++    }
++#endif
+ }
+ 
+ template <typename Atomic>
+ inline void futexWakeOne(Atomic &futex)
+ {
+-    static_assert(sizeof(typename Atomic::Type) == 4 || sizeof(typename Atomic::Type) == 8);
+-    os_sync_wake_by_address_any(&futex, sizeof(typename Atomic::Type),
+-                                OS_SYNC_WAKE_BY_ADDRESS_NONE);
++#ifdef QT_DARWIN_FUTEX_ULOCK_FALLBACK
++    if (__builtin_available(macOS 14.4, *))
++#endif
++    {
++        static_assert(sizeof(typename Atomic::Type) == 4 || sizeof(typename Atomic::Type) == 8);
++        os_sync_wake_by_address_any(&futex, sizeof(typename Atomic::Type),
++                                    OS_SYNC_WAKE_BY_ADDRESS_NONE);
++    }
++#ifdef QT_DARWIN_FUTEX_ULOCK_FALLBACK
++    else {
++        __ulock_wake(ulockOperation(futex), &futex, 0);
++    }
++#endif
+ }
+ } //namespace QtDarwinFutex
+ 
+diff --git a/src/plugins/platforms/cocoa/qcocoascreen.h b/src/plugins/platforms/cocoa/qcocoascreen.h
+index 3cefde38..c37c9f09 100644
+--- a/src/plugins/platforms/cocoa/qcocoascreen.h
++++ b/src/plugins/platforms/cocoa/qcocoascreen.h
+@@ -28,6 +28,9 @@ public:
+     // ----------------------------------------------------
+     // Virtual methods overridden from QPlatformScreen
+     QPixmap grabWindow(WId window, int x, int y, int width, int height) const override;
++    // ACE Studio patch: the ScreenCaptureKit calls grabWindow makes need macOS 14.4.
++    QPixmap grabWindowWithScreenCaptureKit(WId window, int x, int y, int width, int height) const
++        API_AVAILABLE(macos(14.4));
+     QRect geometry() const override { return m_geometry; }
+     QRect availableGeometry() const override { return m_availableGeometry; }
+     int depth() const override { return m_depth; }
+diff --git a/src/plugins/platforms/cocoa/qcocoascreen.mm b/src/plugins/platforms/cocoa/qcocoascreen.mm
+index 1f8367e3..2c94f6b5 100644
+--- a/src/plugins/platforms/cocoa/qcocoascreen.mm
++++ b/src/plugins/platforms/cocoa/qcocoascreen.mm
+@@ -602,6 +602,16 @@ QWindow *QCocoaScreen::topLevelAt(const QPoint &point) const
+     coordinates.
+ */
+ QPixmap QCocoaScreen::grabWindow(WId view, int x, int y, int width, int height) const
++{
++    // ACE Studio patch: below macOS 14.4 there is nothing to grab with. The
++    // CGDisplayCreateImageForRect path Qt used through 6.11 is gone from the SDK.
++    if (@available(macOS 14.4, *))
++        return grabWindowWithScreenCaptureKit(view, x, y, width, height);
++    qCWarning(lcQpaScreen) << "grabWindow needs macOS 14.4 or later";
++    return {};
++}
++
++QPixmap QCocoaScreen::grabWindowWithScreenCaptureKit(WId view, int x, int y, int width, int height) const
+ {
+     // ScreenCaptureKit brings down WindowServer on macOS 14 x86_64 VMs in CI
+     if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(
+-- 
+2.56.0
+

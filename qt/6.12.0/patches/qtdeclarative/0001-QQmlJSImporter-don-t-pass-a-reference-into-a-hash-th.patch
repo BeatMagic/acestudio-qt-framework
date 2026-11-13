@@ -1,0 +1,45 @@
+From ada1940983f188f61f172940080f4e941581f44a Mon Sep 17 00:00:00 2001
+From: shine5402 <14089306+shine5402@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 17:39:55 +0800
+Subject: [PATCH] QQmlJSImporter: don't pass a reference into a hash that the
+ callee may rehash
+
+importHelper() handed setupImport() a reference into
+m_seenQmldirFilesAndDirectories. setupImport() recurses through
+importDependencies(), which can insert into that hash; a rehash leaves the
+reference dangling and processImport() then copies the import's warnings out
+of freed memory. qmlcachegen crashed intermittently (about one run in two on a
+large project) in QList<DiagnosticMessage>::append. Pass a copy instead.
+---
+ src/qmlcompiler/qqmljsimporter.cpp | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/src/qmlcompiler/qqmljsimporter.cpp b/src/qmlcompiler/qqmljsimporter.cpp
+index 71ec0eb..732e03b 100644
+--- a/src/qmlcompiler/qqmljsimporter.cpp
++++ b/src/qmlcompiler/qqmljsimporter.cpp
+@@ -951,8 +951,11 @@ bool QQmlJSImporter::importHelper(const QString &module, AvailableTypes *types,
+ 
+         // Check whether we need to import again below, reading the qmldir this time.
+         const auto it = m_seenQmldirFilesAndDirectories.constFind(qmldirPath);
++        // setupImport() recurses into importDependencies(), which may insert into
++        // m_seenQmldirFilesAndDirectories and rehash it, so pass a copy rather than a
++        // reference into the hash.
+         if (it != m_seenQmldirFilesAndDirectories.constEnd() && it->type == Import::Qmldir)
+-            return setupImport(*it);
++            return setupImport(QQmlJSImporter::Import(*it));
+ 
+         const QFileInfo file(qmldirPath);
+         if (file.exists()) {
+@@ -963,7 +966,7 @@ bool QQmlJSImporter::importHelper(const QString &module, AvailableTypes *types,
+         }
+ 
+         if (it != m_seenQmldirFilesAndDirectories.constEnd())
+-            return setupImport(*it);
++            return setupImport(QQmlJSImporter::Import(*it));
+     }
+ 
+     if (isFile) {
+-- 
+2.56.0
+
