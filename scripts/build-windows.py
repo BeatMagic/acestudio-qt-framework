@@ -19,17 +19,46 @@ Debug, debug info forced on); the generator is Ninja Multi-Config, as Qt's.
 """
 
 import argparse
+import hashlib
 import os
 import subprocess
 import sys
+import tarfile
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# The official qtbase is built with Vulkan, so its QRhi headers need vulkan.h when
+# another module builds against them. Khronos' headers are enough; the SDK isn't.
+VULKAN_HEADERS = (
+    "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/vulkan-sdk-1.4.363.0.tar.gz",
+    "4a078be12bef21cfebc09d878b77a63cff9d68f899254a0b00d0e37ef73e7f7e",
+)
 
 
 def run(cmd, cwd=None):
     print("+", " ".join(str(c) for c in cmd), flush=True)
     subprocess.run([str(c) for c in cmd], cwd=cwd, check=True)
+
+
+def vulkan_include_dir(work: Path) -> Path:
+    dest = work / "vulkan-headers"
+    if not dest.exists():
+        url, expected = VULKAN_HEADERS
+        request = urllib.request.Request(url, headers={"User-Agent": "acestudio-qt-framework"})
+        with urllib.request.urlopen(request, timeout=300) as response:
+            data = response.read()
+        if hashlib.sha256(data).hexdigest() != expected:
+            raise SystemExit(f"SHA-256 mismatch for {url}")
+        archive = work / "vulkan-headers.tar.gz"
+        archive.write_bytes(data)
+        with tarfile.open(archive) as tf:
+            top = tf.getnames()[0].split("/")[0]
+            tf.extractall(work, filter="tar")
+        archive.unlink()
+        (work / top).rename(dest)
+    return dest / "include"
 
 
 def main() -> int:
@@ -48,12 +77,13 @@ def main() -> int:
     run([sys.executable, "-I", ROOT / "scripts" / "prepare-sources.py", "--qt", args.qt,
          "--out", work / "src", *modules])
 
+    vulkan = vulkan_include_dir(work)
     for module in modules:
         build = work / "build" / module
         build.mkdir(parents=True, exist_ok=True)
         run([prefix / "bin" / "qt-configure-module.bat", work / "src" / module, "--",
              "-G", "Ninja Multi-Config", "-DQT_BUILD_TESTS=OFF", "-DQT_BUILD_EXAMPLES=OFF",
-             "-DFEATURE_clangcpp=OFF"], cwd=build)
+             "-DFEATURE_clangcpp=OFF", f"-DVulkan_INCLUDE_DIR={vulkan}"], cwd=build)
         run(["cmake", "--build", "."], cwd=build)
         for config in ("RelWithDebInfo", "Debug"):
             run(["cmake", "--install", ".", "--config", config], cwd=build)
