@@ -1,8 +1,13 @@
+<!--
+SPDX-FileCopyrightText: 2026 The acestudio-qt-framework contributors
+SPDX-License-Identifier: MIT
+-->
+
 # acestudio-qt-framework
 
 The Qt that [ACE Studio](https://acestudio.ai) builds against and ships, as a patch series on top of the official Qt release sources, with the scripts that build it. The prebuilt archives are served from `https://acestudio-qt-framework-prebuilt.timedomain.dev`, and ACE Studio's bootstrap fetches them by pinned SHA-256.
 
-This repository is the corresponding source for those archives. Qt is licensed under the LGPL, and an application that ships a modified Qt has to make the modified source available. Nothing else in ACE Studio is here.
+This repository is the corresponding source for those archives: Qt's open-source licenses require an application that ships a modified Qt to make the modified source available. Nothing else in ACE Studio is here.
 
 ## What is patched, and why
 
@@ -21,6 +26,7 @@ qt/<version>/patches/<module>/   patch series, applied in name order
 scripts/prepare-sources.py       fetch + verify + extract + patch
 scripts/build-macos.sh           macOS universal build
 scripts/package-macos.sh         macOS archives (libraries + dSYMs)
+scripts/package-docs.py          documentation archive (.qch, all platforms)
 ```
 
 The `Sources` workflow fetches every pinned archive, checks its SHA-256, and applies every patch on each push.
@@ -45,6 +51,8 @@ A build is named `qt-<version>-<target>-<revision>`. The revision goes up whenev
 | --- | --- | --- |
 | `qt-6.12.0-macos13-2` | `qt-6.12.0-macos13-2-universal.tar.xz`, `…-universal-dsym.tar.xz` | Xcode 27.2 (SDK 27.2), CMake 4.4.4, Ninja 1.13.2, OpenSSL 3.5.9 headers |
 
+The documentation archive, `qt-<version>-docs.tar.xz`, is one for all platforms: the official `.qch` files of the modules ACE Studio ships, unmodified (the patches change no API), under `doc/` as in a Qt prefix. `scripts/package-docs.py` builds it from the documentation packages on download.qt.io.
+
 ### macOS
 
 On an Apple Silicon Mac with Xcode, CMake and Ninja:
@@ -62,4 +70,8 @@ The Windows build is the official `msvc2022_64` binaries with qtdeclarative rebu
 
 ## License
 
-The patches modify Qt and are under the licenses of the files they modify, as Qt offers them: LGPL-3.0-only, GPL-2.0-only or GPL-3.0-only. See [qt.io/licensing](https://www.qt.io/licensing/).
+Every file carries its license as an SPDX identifier, following [REUSE](https://reuse.software); the texts are in `LICENSES/`, and CI runs `reuse lint`.
+
+- The scripts, workflows and this README are MIT.
+- A patch carries the license of the Qt files it modifies, minus Qt's commercial option: the qtbase patch is `LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only`, and the qtdeclarative patch, which touches QtQmlCompiler (the library behind `qmlcachegen`), is `GPL-3.0-only WITH Qt-GPL-exception-1.0`.
+- The documentation archive repackages Qt's `.qch` files unmodified, under Qt's documentation license, `GFDL-1.3-no-invariants-only`; its text ships inside the archive.
