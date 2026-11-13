@@ -26,7 +26,9 @@ qt/<version>/patches/<module>/   patch series, applied in name order
 scripts/prepare-sources.py       fetch + verify + extract + patch
 scripts/build-macos.sh           macOS universal build
 scripts/package-macos.sh         macOS archives (libraries + dSYMs)
-scripts/package-docs.py          documentation archive (.qch, all platforms)
+scripts/fetch-qt-binaries.py     official Windows binaries, laid out as a prefix
+scripts/build-windows.py         Windows: patched modules rebuilt over them
+scripts/package-windows.py       Windows archives (libraries + PDBs)
 ```
 
 The `Sources` workflow fetches every pinned archive, checks its SHA-256, and applies every patch on each push.
@@ -38,10 +40,10 @@ For upstream Qt, read the [github.com/qt](https://github.com/qt) mirror (for exa
 For the exact source of a build, patches included, reproduce it locally:
 
 ```sh
-python3 scripts/prepare-sources.py --qt 6.12.0 --out ~/Qt/src-acestudio/6.12.0 qtbase qtdeclarative
+python3 scripts/prepare-sources.py --qt 6.12.0 --out ~/.acestudio-dev/qt/6.12.0/Src qtbase qtdeclarative
 ```
 
-Name the modules you need, or pass `--all`. Modules without patches are byte-identical to upstream. Give it a directory of its own, not an installer's `Src`: a module directory that already exists is left as it is, so it would stay unpatched.
+ACE Studio's bootstrap keeps its Qt in `~/.acestudio-dev/qt/`, laid out as a Qt installer lays out `~/Qt/`, so this puts the source where an installer puts its `Src`. Name the modules you need, or pass `--all`; modules without patches are byte-identical to upstream. Point it only at a directory of its own, never an installer's `Src`: a module directory that already exists is left as it is, so it would stay unpatched.
 
 ## Builds
 
@@ -51,7 +53,7 @@ A build is named `qt-<version>-<target>-<revision>`. The revision goes up whenev
 | --- | --- | --- |
 | `qt-6.12.0-macos13-2` | `qt-6.12.0-macos13-2-universal.tar.xz`, `…-universal-dsym.tar.xz` | Xcode 27.2 (SDK 27.2), CMake 4.4.4, Ninja 1.13.2, OpenSSL 3.5.9 headers |
 
-The documentation archive, `qt-<version>-docs.tar.xz`, is one for all platforms: the official `.qch` files of the modules ACE Studio ships, unmodified (the patches change no API), under `doc/` as in a Qt prefix. `scripts/package-docs.py` builds it from the documentation packages on download.qt.io.
+The mirror also serves Qt's documentation archives for the modules ACE Studio ships, under `docs/<version>/`: the files of the installer's documentation packages, unchanged and under Qt's names.
 
 ### macOS
 
@@ -66,7 +68,14 @@ This builds universal (x86_64 + arm64) with a macOS 13 deployment target: releas
 
 ### Windows
 
-The Windows build is the official `msvc2022_64` binaries with qtdeclarative rebuilt from patched source. The recipe and its workflow are coming.
+The Windows build is the official `msvc2022_64` binaries, with every patched module except qtbase rebuilt from patched source and installed over them. The rebuild inherits the official configuration from the installed qtbase (MSVC 2022, RelWithDebInfo and Debug, debug info forced on). The `Windows` workflow runs it on a GitHub-hosted runner and returns the two archives (libraries, PDBs) as artifacts. By hand, in an x64 MSVC developer prompt with CMake and Ninja:
+
+```bat
+python scripts\build-windows.py --qt 6.12.0 --work C:\qtw
+python scripts\package-windows.py --qt 6.12.0 --revision <revision> --work C:\qtw
+```
+
+Keep the work dir short: Qt's paths run deep.
 
 ## License
 
@@ -74,4 +83,4 @@ Every file carries its license as an SPDX identifier, following [REUSE](https://
 
 - The scripts, workflows and this README are MIT.
 - A patch carries the license of the Qt files it modifies, minus Qt's commercial option: the qtbase patch is `LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only`, and the qtdeclarative patch, which touches QtQmlCompiler (the library behind `qmlcachegen`), is `GPL-3.0-only WITH Qt-GPL-exception-1.0`.
-- The documentation archive repackages Qt's `.qch` files unmodified, under Qt's documentation license, `GFDL-1.3-no-invariants-only`; its text ships inside the archive.
+- The mirrored documentation is Qt's, unchanged, under Qt's documentation license, `GFDL-1.3-no-invariants-only`.
