@@ -47,8 +47,13 @@ def main() -> int:
             shutil.rmtree(staged)
         (work / tree).rename(staged)
         archive = dist / f"{archive_dir}.tar.xz"
-        subprocess.run(["tar", "--options", f"xz:compression-level={level},xz:threads=0",
-                        "-cJf", archive.name, archive_dir], cwd=dist, check=True)
+        # Windows' tar (bsdtar) is built without xz, so it writes a plain tar and
+        # 7-Zip, on the runner image, compresses it on every core.
+        plain = dist / f"{archive_dir}.tar"
+        subprocess.run(["tar", "-cf", plain.name, archive_dir], cwd=dist, check=True)
+        subprocess.run(["7z", "a", "-txz", f"-mx={level}", "-mmt=on", "-bd",
+                        archive.name, plain.name], cwd=dist, check=True)
+        plain.unlink()
         staged.rename(work / tree)
         print(f"{sha256(archive)}  {archive.name}", flush=True)
     return 0
