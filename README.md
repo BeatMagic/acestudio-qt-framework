@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: 2026 The acestudio-qt-framework contributors
+SPDX-FileCopyrightText: 2026 Timedomain Inc.
 SPDX-License-Identifier: MIT
 -->
 

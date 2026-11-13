@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-FileCopyrightText: 2026 The acestudio-qt-framework contributors
+# SPDX-FileCopyrightText: 2026 Timedomain Inc.
 # SPDX-License-Identifier: MIT
 """Package a scripts/build-windows.py result as the two archives ACE Studio fetches:
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-FileCopyrightText: 2026 The acestudio-qt-framework contributors
+# SPDX-FileCopyrightText: 2026 Timedomain Inc.
 # SPDX-License-Identifier: MIT
 """Build the Windows Qt that ACE Studio ships: the official MSVC 2022 x86_64
 binaries, with each patched module rebuilt from patched source and installed

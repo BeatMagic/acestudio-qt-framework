@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-FileCopyrightText: 2026 The acestudio-qt-framework contributors
+# SPDX-FileCopyrightText: 2026 Timedomain Inc.
 # SPDX-License-Identifier: MIT
 # Builds the macOS Qt that ACE Studio ships: universal (x86_64 + arm64), macOS 13
 # deployment target, release with debug info split into dSYMs, and the OpenSSL TLS
