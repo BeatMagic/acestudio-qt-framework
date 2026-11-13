@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 The acestudio-qt-framework contributors
+# SPDX-License-Identifier: MIT
 """Fetch the official Qt source archives, verify them, and apply our patches.
 
 The sources a build uses are the official release archives from download.qt.io,
@@ -32,7 +34,7 @@ DEFAULT_MIRROR = "https://download.qt.io/official_releases/qt"
 def read_sums(version: str) -> dict:
     sums = {}
     for line in (ROOT / "qt" / version / "SHA256SUMS").read_text().splitlines():
-        if line.strip():
+        if line.strip() and not line.startswith("#"):
             sha, name = line.split()
             sums[name] = sha
     return sums

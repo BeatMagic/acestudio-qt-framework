@@ -1,7 +1,10 @@
+# SPDX-FileCopyrightText: 2026 The acestudio-qt-framework contributors
+# SPDX-License-Identifier: MIT
+
 name: Sources
 
-# Every pinned source archive still verifies against its SHA-256, and every patch
-# still applies to it.
+# Every pinned source archive still verifies against its SHA-256, every patch still
+# applies to it, and every file declares its license.
 on:
   push:
     branches: [main]
@@ -21,3 +24,5 @@ jobs:
             v=$(basename "$v")
             python3 -I scripts/prepare-sources.py --qt "$v" --out "$RUNNER_TEMP/src-$v" --all
           done
+      - name: Every file declares its license
+        run: pipx run --spec 'reuse[charset-normalizer]' reuse lint

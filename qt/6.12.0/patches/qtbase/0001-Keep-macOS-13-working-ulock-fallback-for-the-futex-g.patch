@@ -14,6 +14,9 @@ with a macOS 13 deployment target from running there:
 - QCocoaScreen::grabWindow uses ScreenCaptureKit calls that need macOS
   14.4. The CGDisplayCreateImageForRect path Qt used through 6.11 is gone
   from the SDK, so below 14.4 it returns a null pixmap with a warning.
+SPDX-FileCopyrightText: 2026 The acestudio-qt-framework contributors
+SPDX-License-Identifier: LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+(the license of the qtbase files this patch modifies)
 ---
  src/corelib/thread/qfutex_mac_p.h           | 112 ++++++++++++++++----
  src/plugins/platforms/cocoa/qcocoascreen.h  |   3 +
