@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-FileCopyrightText: 2026 The acestudio-qt-framework contributors
+# SPDX-FileCopyrightText: 2026 Timedomain Inc.
 # SPDX-License-Identifier: MIT
 """Fetch the official Qt source archives, verify them, and apply our patches.
 
