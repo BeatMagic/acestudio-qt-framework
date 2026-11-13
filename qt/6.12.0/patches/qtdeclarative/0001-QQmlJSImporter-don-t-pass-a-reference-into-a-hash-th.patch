@@ -10,7 +10,7 @@ importDependencies(), which can insert into that hash; a rehash leaves the
 reference dangling and processImport() then copies the import's warnings out
 of freed memory. qmlcachegen crashed intermittently (about one run in two on a
 large project) in QList<DiagnosticMessage>::append. Pass a copy instead.
-SPDX-FileCopyrightText: 2026 The acestudio-qt-framework contributors
+SPDX-FileCopyrightText: 2026 Timedomain Inc.
 SPDX-License-Identifier: GPL-3.0-only WITH Qt-GPL-exception-1.0
 (the license of the qtdeclarative files this patch modifies)
 ---
