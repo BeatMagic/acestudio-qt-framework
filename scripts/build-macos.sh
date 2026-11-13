@@ -17,7 +17,7 @@ VERSION=$1
 W=$(cd "$2" && pwd)
 : "${OPENSSL_ROOT_DIR:?point OPENSSL_ROOT_DIR at OpenSSL 3 headers}"
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-MODULES="qtshadertools qtsvg qtimageformats qtdeclarative qtwebsockets qttools qttranslations"
+MODULES="qtshadertools qtsvg qtimageformats qtdeclarative qtwebsockets qttools qttranslations qtcanvaspainter"
 P=$W/install
 B=$W/build
 
