@@ -55,7 +55,7 @@ def vulkan_include_dir(work: Path) -> Path:
         archive.write_bytes(data)
         with tarfile.open(archive) as tf:
             top = tf.getnames()[0].split("/")[0]
-            tf.extractall(work, filter="tar")
+            tf.extractall(work, filter="tar") if sys.version_info >= (3, 12) else tf.extractall(work)
         archive.unlink()
         (work / top).rename(dest)
     return dest / "include"
