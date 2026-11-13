@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: 2026 The acestudio-qt-framework contributors
+# SPDX-License-Identifier: MIT
 # Packages a scripts/build-macos.sh install as the two archives ACE Studio fetches:
 #
 #   qt-<version>-macos13-<revision>-universal.tar.xz        the libraries and tools
