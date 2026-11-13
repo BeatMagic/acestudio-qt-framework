@@ -28,7 +28,7 @@ REPO = "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop"
 ARCH = "win64_msvc2022_64"
 # The base package carries qtbase, qtdeclarative, qtsvg, qttools and
 # qttranslations; the add-ons ACE Studio ships have packages of their own.
-ADDONS = ("qtshadertools", "qtimageformats", "qtwebsockets")
+ADDONS = ("qtshadertools", "qtimageformats", "qtwebsockets", "qtcanvaspainter")
 # DLLs the base package unpacks at the prefix root; the installer moves them
 # into bin, beside the Qt DLLs that load them.
 ROOT_DLLS = ("d3dcompiler_47.dll", "opengl32sw.dll")
