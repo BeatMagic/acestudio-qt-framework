@@ -52,6 +52,7 @@ A build is named `qt-<version>-<target>-<revision>`. The revision goes up whenev
 | Build | Archives | Toolchain |
 | --- | --- | --- |
 | `qt-6.12.0-macos13-2` | `qt-6.12.0-macos13-2-universal.tar.xz`, `…-universal-dsym.tar.xz` | Xcode 27.2 (SDK 27.2), CMake 4.4.4, Ninja 1.13.2, OpenSSL 3.5.9 headers |
+| `qt-6.12.0-macos13-3` | `qt-6.12.0-macos13-3-universal.tar.xz`, `…-universal-dsym.tar.xz` | as `-2`, plus Qt Canvas Painter |
 
 The mirror also serves Qt's documentation archives for the modules ACE Studio ships, under `docs/<version>/`: the files of the installer's documentation packages, unchanged and under Qt's names.
 
