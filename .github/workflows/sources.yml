@@ -1,0 +1,23 @@
+name: Sources
+
+# Every pinned source archive still verifies against its SHA-256, and every patch
+# still applies to it.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch, verify, and patch every pinned version
+        run: |
+          for v in qt/*/; do
+            v=$(basename "$v")
+            python3 -I scripts/prepare-sources.py --qt "$v" --out "$RUNNER_TEMP/src-$v" --all
+          done
