@@ -5,19 +5,17 @@ SPDX-License-Identifier: MIT
 
 # acestudio-qt-framework
 
-The Qt that [ACE Studio](https://acestudio.ai) builds against and ships, as a patch series on top of the official Qt release sources, with the scripts that build it.
-
-This repository is the corresponding source for the Qt libraries ACE Studio ships: Qt's open-source licenses require an application that ships a modified Qt to make the modified source available. Nothing else in ACE Studio is here.
+The Qt that [ACE Studio](https://acestudio.ai) ships, as a patch series on top of the official Qt release sources, with the scripts that build it. Qt's open-source licenses require an application that ships a modified Qt to make the modified source available; this repository is that source.
 
 ## What is patched, and why
 
 | Module | Patch | Why |
 | --- | --- | --- |
 | qtbase | `0001-Keep-macOS-13-working-…` | Qt 6.12 raised its macOS floor to 14, and ACE Studio still supports macOS 13. The patch puts the 6.11 code paths back behind run-time availability checks: the futex falls back to `__ulock_*`, and `QCocoaScreen::grabWindow` returns a null pixmap below 14.4. |
-| qtdeclarative | `0001-QQmlJSImporter-don-t-pass-a-reference-…` | `qmlcachegen` crashes intermittently on a large project: `QQmlJSImporter::importHelper` passes a reference into a hash that the callee can rehash. Built on every platform, since the official Windows binaries carry the same bug. |
-| qtdeclarative | `0002-QQuickPopupWindow-close-the-whole-menu-chain-…` | In Qt 6.12, pressing the title of an open `MenuBar` menu shown as `Popup.Window` leaves the menu open: the press is swallowed, but the menus are closed through a path that spares a popup while the press lands inside its parent item, which for a menu bar menu is that title. The patch closes the whole chain, as Qt 6.10 did. The macOS build `-3` predates it: on macOS, ACE Studio's menu bar is the native one. |
+| qtdeclarative | `0001-QQmlJSImporter-don-t-pass-a-reference-…` | `qmlcachegen` crashes intermittently on a large project: `QQmlJSImporter::importHelper` passes a reference into a hash that the callee can rehash. |
+| qtdeclarative | `0002-QQuickPopupWindow-close-the-whole-menu-chain-…` | Pressing the title of an open `MenuBar` menu shown as `Popup.Window` leaves the menu open: the press is swallowed, but the menus are closed through a path that spares a popup while the press lands inside its parent item, which for a menu bar menu is that title. The patch closes the whole chain, as Qt 6.10 did. |
 
-Each patch's message says what it changes. The full list is `qt/<version>/patches/<module>/`.
+Each patch's message says what it changes.
 
 ## Layout
 
@@ -32,51 +30,35 @@ scripts/build-windows.py         Windows: patched modules rebuilt over them
 scripts/package-windows.py       Windows archives (libraries + PDBs)
 ```
 
-The `Sources` workflow fetches every pinned archive, checks its SHA-256, and applies every patch on each push.
+Each script's header says how to run it. The `Sources` workflow fetches every pinned archive, checks its SHA-256, and applies every patch on each push.
 
 ## Reading the source
 
-For upstream Qt, read the [github.com/qt](https://github.com/qt) mirror (for example `github.com/qt/qtbase`, a read-only mirror of `code.qt.io`) at the release tag `v<version>`, or the `Src` component of a Qt installer of the same version. Both match what ACE Studio runs, except in the files the patches touch.
-
-For the exact source of a build, patches included, reproduce it locally:
+Upstream Qt is at the [github.com/qt](https://github.com/qt) mirror (for example `github.com/qt/qtbase`) at the release tag `v<version>`, or in the `Src` component of a Qt installer of the same version. Both match what ACE Studio runs, except in the files the patches touch. For the exact source, patches included:
 
 ```sh
-python3 scripts/prepare-sources.py --qt 6.12.0 --out ~/.acestudio-dev/qt/6.12.0/Src qtbase qtdeclarative
+python3 scripts/prepare-sources.py --qt 6.12.0 --out <dir> qtbase qtdeclarative
 ```
 
-ACE Studio's bootstrap keeps its Qt in `~/.acestudio-dev/qt/`, laid out as a Qt installer lays out `~/Qt/`, so this puts the source where an installer puts its `Src`. Name the modules you need, or pass `--all`; modules without patches are byte-identical to upstream. Point it only at a directory of its own, never an installer's `Src`: a module directory that already exists is left as it is, so it would stay unpatched.
+Name the modules you need, or pass `--all`; modules without patches are byte-identical to upstream. Point `--out` at a directory of its own, never an installer's `Src`: a module directory that already exists is left as it is, so it would stay unpatched.
 
-## Builds
+## Building
 
-A build is named `qt-<version>-<target>-<revision>`. The revision goes up whenever the patch set or the build recipe changes. The tag of that name marks the commit that build was made from.
-
-| Build | Archives | Toolchain |
-| --- | --- | --- |
-| `qt-6.12.0-macos13-2` | `qt-6.12.0-macos13-2-universal.tar.xz`, `…-universal-dsym.tar.xz` | Xcode 27.2 (SDK 27.2), CMake 4.4.4, Ninja 1.13.2, OpenSSL 3.5.9 headers |
-| `qt-6.12.0-macos13-3` | `qt-6.12.0-macos13-3-universal.tar.xz`, `…-universal-dsym.tar.xz` | as `-2`, plus Qt Canvas Painter |
-| `qt-6.12.0-windows-msvc2022_64-1` | `qt-6.12.0-windows-msvc2022_64-1.tar.xz`, `…-1-pdb.tar.xz` | GitHub Actions `windows-2022`: MSVC 14.44.35207, CMake 3.31.6, Ninja 1.13.2, Vulkan-Headers `vulkan-sdk-1.4.363.0`; the official Qt binaries with the patched modules rebuilt |
-
-### macOS
-
-On an Apple Silicon Mac with Xcode, CMake and Ninja:
+macOS, on an Apple Silicon Mac with Xcode, CMake and Ninja: universal (x86_64 + arm64), macOS 13 deployment target, release with debug info split into dSYMs.
 
 ```sh
-OPENSSL_ROOT_DIR=/path/to/openssl3 scripts/build-macos.sh 6.12.0 /path/to/work
-scripts/package-macos.sh 6.12.0 <revision> /path/to/work
+OPENSSL_ROOT_DIR=/path/to/openssl3 scripts/build-macos.sh 6.12.0 <work>
+scripts/package-macos.sh 6.12.0 <revision> <work>
 ```
 
-This builds universal (x86_64 + arm64) with a macOS 13 deployment target: release with debug info split into dSYMs, and the OpenSSL backend loaded at run time. It takes about 75 minutes on an M-series laptop, and the build tree reaches about 33 GB.
-
-### Windows
-
-The Windows build is the official `msvc2022_64` binaries, with every patched module except qtbase rebuilt from patched source and installed over them. The rebuild inherits the official configuration from the installed qtbase (MSVC 2022, RelWithDebInfo and Debug, debug info forced on). The `Windows` workflow runs it on a GitHub-hosted runner and returns the two archives (libraries, PDBs) as artifacts. By hand, in an x64 MSVC developer prompt with CMake and Ninja:
+Windows: the official `msvc2022_64` binaries, with every patched module except qtbase rebuilt from patched source with the configuration it inherits from the installed qtbase, and installed over them. In an x64 MSVC developer prompt with CMake and Ninja, or through the `Windows` workflow:
 
 ```bat
 python scripts\build-windows.py --qt 6.12.0 --work C:\qtw
 python scripts\package-windows.py --qt 6.12.0 --revision <revision> --work C:\qtw
 ```
 
-Keep the work dir short: Qt's paths run deep.
+A build is named `qt-<version>-<target>-<revision>`; the revision goes up whenever the patch set or the recipe changes, and the tag of that name marks the commit it was built from.
 
 ## License
 
