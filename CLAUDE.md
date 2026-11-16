@@ -13,20 +13,18 @@ The README is for a human reading this repository for the first time: one line p
 
 - A patch is a `git format-patch` of the module's source tree (paths without the module prefix), applied with `git apply` in name order by `scripts/prepare-sources.py`. `.gitattributes` keeps `*.patch` byte-exact (`-text`).
 - Its message says what it changes and why, then ends with three lines:
-  <!-- REUSE-IgnoreStart -->
   ```
   SPDX-FileCopyrightText: 2026 Timedomain Inc.
   SPDX-License-Identifier: <the modified Qt files' license, minus LicenseRef-Qt-Commercial>
   (the license of the <module> files this patch modifies)
   ```
-  <!-- REUSE-IgnoreEnd -->
   Today that is `LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only` for qtbase and for QtQuickTemplates2, and `GPL-3.0-only WITH Qt-GPL-exception-1.0` for QtQmlCompiler. Read the header of the file you modify; a license not yet in `LICENSES/` needs its text added there.
 - Add the patch's row to the README table.
 
 ## Files and checks
 
-- Every file carries an SPDX header (MIT, `Timedomain Inc.`), following REUSE.
-- The `Sources` workflow runs on every push and PR: it fetches every pinned archive, checks its SHA-256, applies every patch, and runs `reuse lint`.
+- Every file carries an SPDX header (MIT, `Timedomain Inc.`).
+- The `Sources` workflow runs on every push and PR: it fetches every pinned archive, checks its SHA-256, and applies every patch.
 - The `Windows` workflow is dispatched by hand (Qt version, revision) and returns the archives as artifacts.
 
 ## Builds
