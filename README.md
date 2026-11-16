@@ -32,16 +32,6 @@ scripts/package-windows.py       Windows archives (libraries + PDBs)
 
 Each script's header says how to run it. The `Sources` workflow fetches every pinned archive, checks its SHA-256, and applies every patch on each push.
 
-## Reading the source
-
-Upstream Qt is at the [github.com/qt](https://github.com/qt) mirror (for example `github.com/qt/qtbase`) at the release tag `v<version>`, or in the `Src` component of a Qt installer of the same version. Both match what ACE Studio runs, except in the files the patches touch. For the exact source, patches included:
-
-```sh
-python3 scripts/prepare-sources.py --qt 6.12.0 --out <dir> qtbase qtdeclarative
-```
-
-Name the modules you need, or pass `--all`; modules without patches are byte-identical to upstream. Point `--out` at a directory of its own, never an installer's `Src`: a module directory that already exists is left as it is, so it would stay unpatched.
-
 ## Building
 
 macOS, on an Apple Silicon Mac with Xcode, CMake and Ninja: universal (x86_64 + arm64), macOS 13 deployment target, release with debug info split into dSYMs.
