@@ -1,0 +1,52 @@
+From a12a189e7f08d39c89092a8410395cbe2d26f53a Mon Sep 17 00:00:00 2001
+From: shine5402 <14089306+shine5402@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 13:55:32 +0800
+Subject: [PATCH] QQuickPopupWindow: close the whole menu chain on a press on
+ the menu bar
+
+When a Popup.Window menu opened from a MenuBar is open, a press on the
+menu bar is meant to close every open menu and be swallowed, so that the
+MenuBar doesn't reopen the menu right away. Since CloseMultiple, that
+branch closes them through closePopups(), which keeps a popup open while
+a CloseOnPressOutsideParent press lands inside its parent item.
+QQuickMenuBarItem gives its menu exactly that policy, with itself as the
+parent item. Pressing the title of an open menu therefore closed nothing
+but its submenus, and swallowed the press: the menu stayed open, and
+the title could not close it. Qt 6.10 closed the whole chain here.
+
+Close every menu from the popup up through its transient-parent popup
+windows unconditionally, as the comment there already says.
+SPDX-FileCopyrightText: 2026 Timedomain Inc.
+SPDX-License-Identifier: LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+(the license of the qtdeclarative files this patch modifies)
+---
+ src/quicktemplates/qquickpopupwindow.cpp | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/src/quicktemplates/qquickpopupwindow.cpp b/src/quicktemplates/qquickpopupwindow.cpp
+index 4d3bc71..ac29df2 100644
+--- a/src/quicktemplates/qquickpopupwindow.cpp
++++ b/src/quicktemplates/qquickpopupwindow.cpp
+@@ -313,7 +313,18 @@ bool QQuickPopupWindowPrivate::filterPopupSpecialCases(QEvent *event)
+             // to the window under the pointer, and therefore also to the MenuBar.
+             // The latter would otherwise cause a menu to reopen again immediately, and
+             // undermine that we want to close all popups.
+-            closePopups(QQuickPopup::CloseOnPressOutside | QQuickPopup::CloseOnPressOutsideParent);
++            // Don't use closePopups() here: it keeps a CloseOnPressOutsideParent popup open
++            // while the press is inside its parent item, and a menu bar menu has that policy
++            // with its MenuBarItem as parent item. Pressing the item of an open menu would
++            // then leave the menu open, with the press swallowed.
++            QQuickPopup *current = q->popup();
++            while (current && QQuickPopupPrivate::get(current)->popupWindow) {
++                qCDebug(lcPopupWindow) << "Closing" << current << "from a pointer press on the menu bar.";
++                current->close();
++                auto *transientParentPopupWindow = qobject_cast<QQuickPopupWindow *>(
++                        QQuickPopupPrivate::get(current)->popupWindow->transientParent());
++                current = transientParentPopupWindow ? transientParentPopupWindow->popup() : nullptr;
++            }
+             return true;
+         } else if (!targetPopup) {
+             // Pressed outside either a popup window, or a menu or menubar that owns a menu using popup windows.
+-- 
+2.56.0
+

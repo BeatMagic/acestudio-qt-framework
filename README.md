@@ -15,6 +15,7 @@ This repository is the corresponding source for those archives: Qt's open-source
 | --- | --- | --- |
 | qtbase | `0001-Keep-macOS-13-working-…` | Qt 6.12 raised its macOS floor to 14, and ACE Studio still supports macOS 13. The patch puts the 6.11 code paths back behind run-time availability checks: the futex falls back to `__ulock_*`, and `QCocoaScreen::grabWindow` returns a null pixmap below 14.4. |
 | qtdeclarative | `0001-QQmlJSImporter-don-t-pass-a-reference-…` | `qmlcachegen` crashes intermittently on a large project: `QQmlJSImporter::importHelper` passes a reference into a hash that the callee can rehash. Built on every platform, since the official Windows binaries carry the same bug. |
+| qtdeclarative | `0002-QQuickPopupWindow-close-the-whole-menu-chain-…` | In Qt 6.12, pressing the title of an open `MenuBar` menu shown as `Popup.Window` leaves the menu open: the press is swallowed, but the menus are closed through a path that spares a popup while the press lands inside its parent item, which for a menu bar menu is that title. The patch closes the whole chain, as Qt 6.10 did. The macOS build `-3` predates it: on macOS, ACE Studio's menu bar is the native one. |
 
 Each patch's message says what it changes. The full list is `qt/<version>/patches/<module>/`.
 
@@ -84,5 +85,5 @@ Keep the work dir short: Qt's paths run deep.
 Every file carries its license as an SPDX identifier, following [REUSE](https://reuse.software); the texts are in `LICENSES/`, and CI runs `reuse lint`.
 
 - The scripts, workflows and this README are MIT.
-- A patch carries the license of the Qt files it modifies, minus Qt's commercial option: the qtbase patch is `LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only`, and the qtdeclarative patch, which touches QtQmlCompiler (the library behind `qmlcachegen`), is `GPL-3.0-only WITH Qt-GPL-exception-1.0`.
+- A patch carries the license of the Qt files it modifies, minus Qt's commercial option: the qtbase patch and the qtdeclarative `0002` patch (QtQuickTemplates2) are `LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only`, and the qtdeclarative `0001` patch, which touches QtQmlCompiler (the library behind `qmlcachegen`), is `GPL-3.0-only WITH Qt-GPL-exception-1.0`.
 - The mirrored documentation is Qt's, unchanged, under Qt's documentation license, `GFDL-1.3-no-invariants-only`.
