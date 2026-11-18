@@ -35,7 +35,14 @@ python scripts\build-windows.py --qt 6.12.0 --work C:\qtw
 python scripts\package-windows.py --qt 6.12.0 --revision <revision> --work C:\qtw
 ```
 
-Each build is tagged `qt-<version>-<target>-<revision>` on the commit it was built from.
+Qt WebEngine (with Qt WebChannel) is built on top of that Qt and packaged on its own, to unpack over the Qt archive. It is built with the proprietary codecs (H.264 and AAC through Chromium's FFmpeg). macOS:
+
+```sh
+PYTHON3=/path/to/python-with-html5lib scripts/build-webengine-macos.sh 6.12.0 6.140.0 <work>
+scripts/package-webengine-macos.sh 6.12.0 6.140.0 <revision> <work>
+```
+
+Each build is tagged `qt-<version>-<target>-<revision>` on the commit it was built from, and a Qt WebEngine build `qtwebengine-<version>-<target>-<revision>`.
 
 ## License
 

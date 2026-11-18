@@ -1,0 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Timedomain Inc.
+# SPDX-License-Identifier: MIT
+# Qt publishes only MD5 sums for Qt WebEngine (md5sums.txt beside the archive); this
+# SHA-256 was taken from an archive matching that MD5 (297be1af46debde1703d9c8151516d68).
+82352854a1d01dfe6abeefaf023554e4722c1d7df48ba3ce0078f6c0a9c7e1a3  qtwebengine-everywhere-src-6.140.0.tar.xz
