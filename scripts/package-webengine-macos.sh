@@ -25,16 +25,17 @@ S=$W/dist/stage
 rm -rf "$S"
 mkdir -p "$S/$N" "$S/$N-dsym"
 # A manifest does not end in a newline: awk 1 ends each with one, where cat would
-# join one's last path to the next one's first.
-awk 1 "$W/build/qtwebchannel/install_manifest.txt" "$W/build/qtwebengine/install_manifest.txt" |
-    sed -n "s|^$P/||p" | sort -u | while read -r f; do
-        case $f in
-        *.dSYM/*) d=$S/$N-dsym ;;
-        *) d=$S/$N ;;
-        esac
-        mkdir -p "$d/$(dirname "$f")"
-        cp -Pc "$P/$f" "$d/$f" 2>/dev/null || cp -P "$P/$f" "$d/$f"
-    done
+# join one's last path to the next one's first. It runs on its own so that set -e
+# stops on a missing manifest, which a pipeline's status would hide.
+awk 1 "$W/build/qtwebchannel/install_manifest.txt" "$W/build/qtwebengine/install_manifest.txt" > "$S/manifest"
+sed -n "s|^$P/||p" "$S/manifest" | sort -u | while read -r f; do
+    case $f in
+    *.dSYM/*) d=$S/$N-dsym ;;
+    *) d=$S/$N ;;
+    esac
+    mkdir -p "$d/$(dirname "$f")"
+    cp -Pc "$P/$f" "$d/$f" 2>/dev/null || cp -P "$P/$f" "$d/$f"
+done
 cd "$S"
 tar -cf - "$N" | xz -T0 -6 > "../$N.tar.xz"
 tar -cf - "$N-dsym" | xz -T0 -3 > "../$N-dsym.tar.xz"
