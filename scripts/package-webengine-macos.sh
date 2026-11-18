@@ -24,7 +24,9 @@ S=$W/dist/stage
 
 rm -rf "$S"
 mkdir -p "$S/$N" "$S/$N-dsym"
-cat "$W/build/qtwebchannel/install_manifest.txt" "$W/build/qtwebengine/install_manifest.txt" |
+# A manifest does not end in a newline: awk 1 ends each with one, where cat would
+# join one's last path to the next one's first.
+awk 1 "$W/build/qtwebchannel/install_manifest.txt" "$W/build/qtwebengine/install_manifest.txt" |
     sed -n "s|^$P/||p" | sort -u | while read -r f; do
         case $f in
         *.dSYM/*) d=$S/$N-dsym ;;
