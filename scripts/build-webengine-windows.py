@@ -99,6 +99,12 @@ def main() -> int:
         if not (build / "build.ninja").exists():
             run([prefix / "bin" / "qt-configure-module.bat", work / "src" / module, *options,
                  "--", *cmake_args], cwd=build)
+        else:
+            # An existing tree may predate a configuration installed into the prefix
+            # since (qtwebchannel's Debug, say). A Qt targets file globs its per-config
+            # files, which CMake doesn't track, so re-run it, or the missing config's
+            # links fall back to another config's import library.
+            run(["cmake", "."], cwd=build)
         run(["cmake", "--build", "."], cwd=build)
         for config in ("RelWithDebInfo", "Debug"):
             run(["cmake", "--install", ".", "--config", config], cwd=build)
