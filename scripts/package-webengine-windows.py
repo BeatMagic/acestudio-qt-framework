@@ -13,7 +13,9 @@ The files are those the qtwebchannel and qtwebengine builds installed, every
 configuration (their install_manifest-<config>.txt), laid out as in the Qt
 prefix under one top-level directory; the PDBs go to the -pdb archive the same
 way, as in scripts/package-windows.py. Archives land in <work>/dist, and their
-SHA-256 sums are printed for the pin. Uses tar and 7-Zip, as package-windows.py.
+SHA-256 sums are printed for the pin. Uses tar and 7-Zip, as package-windows.py,
+and dumpbin (an x64 MSVC developer environment) to check that no debug binary
+imports a release Qt DLL or the other way round.
 """
 
 import argparse
@@ -40,7 +42,7 @@ def check_qt_imports(stage: Path, bin_dir: Path) -> None:
     bad = []
     for path in sorted(p for p in stage.rglob("*") if p.suffix.lower() in (".dll", ".exe")):
         out = subprocess.run(["dumpbin", "/nologo", "/dependents", str(path)],
-                             capture_output=True, text=True, check=True).stdout
+                             capture_output=True, text=True, errors="replace", check=True).stdout
         imports = [w.lower() for w in out.split() if w.lower().endswith(".dll")]
         debug = bool(DEBUG_CRT & set(imports))
         for dll in imports:
