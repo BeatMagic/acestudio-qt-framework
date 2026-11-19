@@ -13,7 +13,9 @@ The files are those the qtwebchannel and qtwebengine builds installed, every
 configuration (their install_manifest-<config>.txt), laid out as in the Qt
 prefix under one top-level directory; the PDBs go to the -pdb archive the same
 way, as in scripts/package-windows.py. Archives land in <work>/dist, and their
-SHA-256 sums are printed for the pin. Uses tar and 7-Zip, as package-windows.py.
+SHA-256 sums are printed for the pin. Uses tar and 7-Zip, as package-windows.py,
+and dumpbin (an x64 MSVC developer environment) to check that no debug binary
+imports a release Qt DLL or the other way round.
 """
 
 import argparse
@@ -26,6 +28,31 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from importlib import import_module  # noqa: E402
 
 sha256 = import_module("package-windows").sha256
+
+DEBUG_CRT = {"vcruntime140d.dll", "ucrtbased.dll", "msvcp140d.dll"}
+
+
+def check_qt_imports(stage: Path, bin_dir: Path) -> None:
+    """Fail when a debug binary imports a release Qt DLL, or a release binary a debug
+    one: the process would load two Qts. A binary is debug when it imports the debug
+    CRT; a Qt import is debug when it is Qt6<x>d.dll and Qt6<x>.dll exists too."""
+    if not shutil.which("dumpbin"):
+        raise SystemExit("dumpbin is not on PATH; run in an x64 MSVC developer environment")
+    names = {p.name.lower() for p in bin_dir.glob("Qt6*.dll")}
+    bad = []
+    for path in sorted(p for p in stage.rglob("*") if p.suffix.lower() in (".dll", ".exe")):
+        out = subprocess.run(["dumpbin", "/nologo", "/dependents", str(path)],
+                             capture_output=True, text=True, errors="replace", check=True).stdout
+        imports = [w.lower() for w in out.split() if w.lower().endswith(".dll")]
+        debug = bool(DEBUG_CRT & set(imports))
+        for dll in imports:
+            if not dll.startswith("qt6"):
+                continue
+            dll_debug = dll.endswith("d.dll") and dll[:-5] + ".dll" in names
+            if dll_debug != debug:
+                bad.append(f"{path.relative_to(stage)} ({'debug' if debug else 'release'}) imports {dll}")
+    if bad:
+        raise SystemExit("mixed debug and release Qt imports:\n  " + "\n  ".join(bad))
 
 
 def main() -> int:
@@ -76,6 +103,8 @@ def main() -> int:
         dest = stage / top / out
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(prefix / rel, dest)
+
+    check_qt_imports(stage / name, prefix / "bin")
 
     for archive_dir, level in ((name, 6), (f"{name}-pdb", 3)):
         archive = dist / f"{archive_dir}.tar.xz"
