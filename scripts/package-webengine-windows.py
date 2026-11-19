@@ -61,8 +61,19 @@ def main() -> int:
     if stage.exists():
         shutil.rmtree(stage)
     for rel in sorted(files):
-        top = f"{name}-pdb" if rel.suffix.lower() == ".pdb" else name
-        dest = stage / top / rel
+        out, top = rel, name
+        if rel.suffix.lower() == ".pdb":
+            top = f"{name}-pdb"
+            # Qt installs an executable's PDB for every configuration but the first
+            # into bin/<config>/, where a debugger doesn't look; ours carry a d suffix,
+            # so the PDB goes beside its executable.
+            beside = rel.parent.parent / rel.name
+            if (rel.parent.name in ("RelWithDebInfo", "Debug")
+                    and (prefix / beside.with_suffix(".exe")).is_file()):
+                if beside in files:
+                    raise SystemExit(f"{rel} and {beside} would collide")
+                out = beside
+        dest = stage / top / out
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(prefix / rel, dest)
 
