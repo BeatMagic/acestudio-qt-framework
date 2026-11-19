@@ -69,9 +69,14 @@ def main() -> int:
     # which takes effect only with Visual Studio's English language pack installed.
     os.environ["PYTHONUTF8"] = "1"
     os.environ["VSLANG"] = "1033"
+    import atexit
     import ctypes
-    ctypes.windll.kernel32.SetConsoleCP(65001)
-    ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+    kernel32 = ctypes.windll.kernel32
+    # The code page belongs to the console this shares with its caller: put it back.
+    atexit.register(kernel32.SetConsoleOutputCP, kernel32.GetConsoleOutputCP())
+    atexit.register(kernel32.SetConsoleCP, kernel32.GetConsoleCP())
+    kernel32.SetConsoleCP(65001)
+    kernel32.SetConsoleOutputCP(65001)
 
     run([sys.executable, "-I", ROOT / "scripts" / "prepare-sources.py", "--qt", args.qt,
          "--out", work / "src", "qtwebchannel", "--qtwebengine", args.webengine])

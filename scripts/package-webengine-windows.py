@@ -41,14 +41,20 @@ def main() -> int:
 
     files = set()
     for module in ("qtwebchannel", "qtwebengine"):
-        manifests = sorted((work / "build" / module).glob("install_manifest-*.txt"))
-        if not manifests:
-            raise SystemExit(f"no install manifest for {module}; run build-webengine-windows.py")
-        for manifest in manifests:
-            for line in manifest.read_text().splitlines():
-                path = Path(line.strip()).resolve()
-                if line.strip() and path.is_file():
-                    files.add(path.relative_to(prefix))
+        for config in ("RelWithDebInfo", "Debug"):
+            manifest = work / "build" / module / f"install_manifest-{config}.txt"
+            if not manifest.is_file():
+                raise SystemExit(f"{manifest} is missing; run build-webengine-windows.py to the end")
+            for line in manifest.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                # CMake writes the paths without a drive letter; they are on the prefix's.
+                path = Path(line.strip())
+                if not path.drive:
+                    path = Path(prefix.drive + str(path))
+                if not path.is_file():
+                    raise SystemExit(f"{manifest} lists {path}, which is missing")
+                files.add(path.resolve().relative_to(prefix))
 
     dist = work / "dist"
     stage = dist / "stage"
