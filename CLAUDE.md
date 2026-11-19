@@ -18,7 +18,7 @@ The README is for a human reading this repository for the first time: one line p
   SPDX-License-Identifier: <the modified Qt files' license, minus LicenseRef-Qt-Commercial>
   (the license of the <module> files this patch modifies)
   ```
-  Today that is `LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only` for qtbase and for QtQuickTemplates2, and `GPL-3.0-only WITH Qt-GPL-exception-1.0` for QtQmlCompiler. Read the header of the file you modify; a license not yet in `LICENSES/` needs its text added there.
+  Today that is `LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only` for qtbase, QtQuickTemplates2 and Qt WebEngine's own code, `GPL-3.0-only WITH Qt-GPL-exception-1.0` for QtQmlCompiler, and `BSD-3-Clause` for Chromium (Qt WebEngine's `src/3rdparty/chromium`). Keep Chromium files and Qt files in separate patches. A patch ported from elsewhere names its source and keeps its authors' copyright line. Read the header of the file you modify; a license not yet in `LICENSES/` needs its text added there.
 - Add the patch's row to the README table.
 
 ## Files and checks

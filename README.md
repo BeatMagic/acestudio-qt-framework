@@ -14,8 +14,11 @@ The Qt that [ACE Studio](https://acestudio.ai) ships, as a patch series on top o
 | qtbase | `0001-Keep-macOS-13-working-…` | Qt 6.12 requires macOS 14; ACE Studio still supports macOS 13. |
 | qtdeclarative | `0001-QQmlJSImporter-don-t-pass-a-reference-…` | Fixes an intermittent `qmlcachegen` crash. |
 | qtdeclarative | `0002-QQuickPopupWindow-close-the-whole-menu-chain-…` | Pressing the title of an open menu bar menu closes it again. |
+| qtwebengine (Chromium) | `0001-Allow-disabling-Blink-scheduler-throttling-…` | Ported from Electron: a page can be told it is shown while hidden. |
+| qtwebengine (Chromium) | `0002-Allow-keeping-a-RenderWidgetHost-from-being-hidden` | Ported from Electron: a page's widgets can be kept shown. |
+| qtwebengine | `0003-WebEngineView-a-backgroundThrottling-property` | A hidden page can be kept from being throttled, per view, as Electron's `backgroundThrottling` option does. |
 
-The patches are in `qt/<version>/patches/<module>/`, and each one's message explains the change.
+The patches are in `qt/<version>/patches/<module>/` (Qt WebEngine's in `qtwebengine/<version>/patches/`), and each one's message explains the change.
 
 ## Building
 
