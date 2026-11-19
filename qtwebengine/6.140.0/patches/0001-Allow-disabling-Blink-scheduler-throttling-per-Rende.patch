@@ -1,0 +1,193 @@
+From 69f8df8e87118ad99ed8162bf0a5ba64e8397dfc Mon Sep 17 00:00:00 2001
+From: shine5402 <14089306+shine5402@users.noreply.github.com>
+Date: Thu, 19 Nov 2026 12:47:06 +0800
+Subject: [PATCH 1/3] Allow disabling Blink scheduler throttling per RenderView
+
+Ported from Electron's patches/chromium/allow_disabling_blink_scheduler_throttling_per_renderview.patch
+(originally by deepak1556), which Electron uses for its webPreferences
+backgroundThrottling option.
+
+Add PageBroadcast.SetSchedulerThrottling(bool), sent through
+RenderViewHost::SetSchedulerThrottling. While throttling is disallowed,
+WebViewImpl reports every visibility the browser sends as kVisible, so
+the page, its scheduler and everything observing its visibility treat a
+hidden page as a shown one. The browser's own visibility is remembered
+and re-applied when throttling is allowed again.
+
+Electron's change to RenderWidgetHostViewAura::ShowImpl is left out: Qt
+WebEngine does not use that view. The default, throttling allowed,
+leaves Chromium's behavior unchanged.
+SPDX-FileCopyrightText: 2020 Electron contributors
+SPDX-FileCopyrightText: 2026 Timedomain Inc.
+SPDX-License-Identifier: BSD-3-Clause
+(the license of the Chromium files this patch modifies; the Electron patch it ports is MIT)
+---
+ .../navigation_controller_impl_unittest.cc    |  1 +
+ .../renderer_host/render_view_host_impl.cc    |  5 ++++
+ .../renderer_host/render_view_host_impl.h     |  1 +
+ .../content/public/browser/render_view_host.h |  3 +++
+ .../blink/public/mojom/page/page.mojom        |  3 +++
+ .../third_party/blink/public/web/web_view.h   |  1 +
+ .../renderer/core/exported/web_view_impl.cc   | 24 +++++++++++++++++++
+ .../renderer/core/exported/web_view_impl.h    |  7 ++++++
+ 8 files changed, 45 insertions(+)
+
+diff --git a/src/3rdparty/chromium/content/browser/renderer_host/navigation_controller_impl_unittest.cc b/src/3rdparty/chromium/content/browser/renderer_host/navigation_controller_impl_unittest.cc
+index d321fe7..7c93048 100644
+--- a/src/3rdparty/chromium/content/browser/renderer_host/navigation_controller_impl_unittest.cc
++++ b/src/3rdparty/chromium/content/browser/renderer_host/navigation_controller_impl_unittest.cc
+@@ -117,6 +117,7 @@ class MockPageBroadcast : public blink::mojom::PageBroadcast {
+                SetPageLifecycleStateCallback callback),
+               (override));
+   MOCK_METHOD(void, AudioStateChanged, (bool is_audio_playing), (override));
++  MOCK_METHOD(void, SetSchedulerThrottling, (bool allowed), (override));
+   MOCK_METHOD(void,
+               ActivatePrerenderedPage,
+               (blink::mojom::PrerenderPageActivationParamsPtr
+diff --git a/src/3rdparty/chromium/content/browser/renderer_host/render_view_host_impl.cc b/src/3rdparty/chromium/content/browser/renderer_host/render_view_host_impl.cc
+index 7c48044..c55a6f6 100644
+--- a/src/3rdparty/chromium/content/browser/renderer_host/render_view_host_impl.cc
++++ b/src/3rdparty/chromium/content/browser/renderer_host/render_view_host_impl.cc
+@@ -778,6 +778,11 @@ void RenderViewHostImpl::SetBackgroundOpaque(bool opaque) {
+   GetWidget()->GetAssociatedFrameWidget()->SetBackgroundOpaque(opaque);
+ }
+ 
++void RenderViewHostImpl::SetSchedulerThrottling(bool allowed) {
++  if (auto& broadcast = GetAssociatedPageBroadcast())
++    broadcast->SetSchedulerThrottling(allowed);
++}
++
+ bool RenderViewHostImpl::IsMainFrameActive() {
+   return is_active();
+ }
+diff --git a/src/3rdparty/chromium/content/browser/renderer_host/render_view_host_impl.h b/src/3rdparty/chromium/content/browser/renderer_host/render_view_host_impl.h
+index f61d9f0..f14539d 100644
+--- a/src/3rdparty/chromium/content/browser/renderer_host/render_view_host_impl.h
++++ b/src/3rdparty/chromium/content/browser/renderer_host/render_view_host_impl.h
+@@ -136,6 +136,7 @@ class CONTENT_EXPORT RenderViewHostImpl
+   void EnablePreferredSizeMode() override;
+   void WriteIntoTrace(perfetto::TracedProto<TraceProto> context) const override;
+ 
++  void SetSchedulerThrottling(bool allowed) override;
+   void SendWebPreferencesToRenderer();
+   void SendRendererPreferencesToRenderer(
+       const blink::RendererPreferences& preferences);
+diff --git a/src/3rdparty/chromium/content/public/browser/render_view_host.h b/src/3rdparty/chromium/content/public/browser/render_view_host.h
+index 20ca763..a50c122 100644
+--- a/src/3rdparty/chromium/content/public/browser/render_view_host.h
++++ b/src/3rdparty/chromium/content/public/browser/render_view_host.h
+@@ -75,6 +75,9 @@ class CONTENT_EXPORT RenderViewHost {
+   virtual void WriteIntoTrace(
+       perfetto::TracedProto<TraceProto> context) const = 0;
+ 
++  // Disable/Enable scheduler throttling.
++  virtual void SetSchedulerThrottling(bool allowed) {}
++
+  private:
+   // This interface should only be implemented inside content.
+   friend class RenderViewHostImpl;
+diff --git a/src/3rdparty/chromium/third_party/blink/public/mojom/page/page.mojom b/src/3rdparty/chromium/third_party/blink/public/mojom/page/page.mojom
+index b6a4e36..989b2cf 100644
+--- a/src/3rdparty/chromium/third_party/blink/public/mojom/page/page.mojom
++++ b/src/3rdparty/chromium/third_party/blink/public/mojom/page/page.mojom
+@@ -175,4 +175,7 @@ interface PageBroadcast {
+   // 2. The ColorProvider associated with the WebContents changes as a result
+   // of theme changes.
+   UpdateColorProviders(ColorProviderColorMaps color_provider_colors);
++
++  // Whether to enable the Renderer scheduler background throttling.
++  SetSchedulerThrottling(bool allowed);
+ };
+diff --git a/src/3rdparty/chromium/third_party/blink/public/web/web_view.h b/src/3rdparty/chromium/third_party/blink/public/web/web_view.h
+index 2a680cf..025938f 100644
+--- a/src/3rdparty/chromium/third_party/blink/public/web/web_view.h
++++ b/src/3rdparty/chromium/third_party/blink/public/web/web_view.h
+@@ -362,6 +362,7 @@ class BLINK_EXPORT WebView {
+   // Scheduling -----------------------------------------------------------
+ 
+   virtual PageScheduler* Scheduler() const = 0;
++  virtual void SetSchedulerThrottling(bool allowed) {}
+ 
+   // Visibility -----------------------------------------------------------
+ 
+diff --git a/src/3rdparty/chromium/third_party/blink/renderer/core/exported/web_view_impl.cc b/src/3rdparty/chromium/third_party/blink/renderer/core/exported/web_view_impl.cc
+index 8bb96c3..6cb7c12 100644
+--- a/src/3rdparty/chromium/third_party/blink/renderer/core/exported/web_view_impl.cc
++++ b/src/3rdparty/chromium/third_party/blink/renderer/core/exported/web_view_impl.cc
+@@ -644,6 +644,7 @@ WebViewImpl::WebViewImpl(
+   CoreInitializer::GetInstance().ProvideModulesToPage(
+       *page_, session_storage_namespace_id_);
+ 
++  browser_visibility_state_ = visibility;
+   SetVisibilityState(visibility, /*is_initial_state=*/true);
+   if (prerender_param) {
+     page_->SetIsPrerendering(true);
+@@ -2508,6 +2509,13 @@ void WebViewImpl::SetPageLifecycleStateInternal(
+   TRACE_EVENT2("navigation", "WebViewImpl::SetPageLifecycleStateInternal",
+                "old_state", old_state, "new_state", new_state);
+ 
++  // If backgroundThrottling is disabled, the page is always visible. Remember
++  // what the browser asked for so it can be re-applied if throttling is
++  // allowed again while the page is still in that state.
++  browser_visibility_state_ = new_state->visibility;
++  if (!scheduler_throttling_allowed_)
++    new_state->visibility = mojom::blink::PageVisibilityState::kVisible;
++
+   bool storing_in_bfcache = new_state->is_in_back_forward_cache &&
+                             !old_state->is_in_back_forward_cache;
+   bool restoring_from_bfcache = !new_state->is_in_back_forward_cache &&
+@@ -4009,10 +4017,26 @@ PageScheduler* WebViewImpl::Scheduler() const {
+   return GetPage()->GetPageScheduler();
+ }
+ 
++void WebViewImpl::SetSchedulerThrottling(bool allowed) {
++  DCHECK(GetPage());
++  scheduler_throttling_allowed_ = allowed;
++  // Re-apply the visibility the browser last reported: forced to kVisible
++  // while throttling is disallowed, back to the real state once it is allowed
++  // again. Without this, toggling the setting on a page that is already
++  // hidden only took effect at the next visibility change.
++  SetVisibilityState(browser_visibility_state_, /*is_initial_state=*/false);
++}
++
+ void WebViewImpl::SetVisibilityState(
+     mojom::blink::PageVisibilityState visibility_state,
+     bool is_initial_state) {
+   DCHECK(GetPage());
++
++  // If backgroundThrottling is disabled, the page (and everything observing
++  // its visibility, e.g. media) is told it is visible.
++  if (!scheduler_throttling_allowed_)
++    visibility_state = mojom::blink::PageVisibilityState::kVisible;
++
+   GetPage()->SetVisibilityState(visibility_state, is_initial_state);
+   // Do not throttle if the page should be painting.
+   bool is_visible =
+diff --git a/src/3rdparty/chromium/third_party/blink/renderer/core/exported/web_view_impl.h b/src/3rdparty/chromium/third_party/blink/renderer/core/exported/web_view_impl.h
+index fc2c1cb..42588f6 100644
+--- a/src/3rdparty/chromium/third_party/blink/renderer/core/exported/web_view_impl.h
++++ b/src/3rdparty/chromium/third_party/blink/renderer/core/exported/web_view_impl.h
+@@ -445,6 +445,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
+   LocalDOMWindow* PagePopupWindow() const;
+ 
+   PageScheduler* Scheduler() const override;
++  void SetSchedulerThrottling(bool allowed) override;
+   void SetVisibilityState(mojom::blink::PageVisibilityState visibility_state,
+                           bool is_initial_state) override;
+   mojom::blink::PageVisibilityState GetVisibilityState() override;
+@@ -935,6 +936,12 @@ class CORE_EXPORT WebViewImpl final : public WebView,
+   // If true, we send IPC messages when |preferred_size_| changes.
+   bool send_preferred_size_changes_ = false;
+ 
++  bool scheduler_throttling_allowed_ = true;
++  // The visibility most recently requested by the browser, before the
++  // |scheduler_throttling_allowed_| override is applied.
++  mojom::blink::PageVisibilityState browser_visibility_state_ =
++      mojom::blink::PageVisibilityState::kVisible;
++
+   // Whether the preferred size may have changed and |UpdatePreferredSize| needs
+   // to be called.
+   bool needs_preferred_size_update_ = true;
+-- 
+2.56.0
+

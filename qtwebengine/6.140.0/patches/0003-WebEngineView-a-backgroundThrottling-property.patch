@@ -1,0 +1,306 @@
+From c4e4482746c27ec637d2aa7ec26e378918d81b66 Mon Sep 17 00:00:00 2001
+From: shine5402 <14089306+shine5402@users.noreply.github.com>
+Date: Thu, 19 Nov 2026 12:48:31 +0800
+Subject: [PATCH 3/3] WebEngineView: a backgroundThrottling property
+
+A hidden WebEngineView is throttled like a background tab. An
+application that keeps a page working in the background, such as one
+that drives playback from a page's timers, has no way to opt out.
+
+Add a backgroundThrottling property to WebEngineView, true by default
+and changeable at any time, after Electron's webPreferences option of
+the same name and built the way Electron builds it, on the two Chromium
+patches before this one. While it is false, a hidden page keeps running
+as a shown one does: its timers run at full rate, and
+document.visibilityState reports visible.
+
+As Electron's WebContents::SetBackgroundThrottling and
+HandleNewRenderFrame do, the setting goes to every frame of the page,
+including frames created later: each frame's widget is kept from being
+hidden, and each RenderView has scheduler throttling disallowed. The
+page's own view is shown again if it was hidden, and hidden again when
+throttling is allowed while the view is hidden. What Electron does in
+RenderWidgetHostViewAura is done in RenderWidgetHostViewQt: a widget
+kept from being hidden stays shown, attached to its compositor, when its
+item is hidden. (After a navigation into a new process while the view
+is hidden, the page's timers keep their full rate and it still reports
+visible, but requestAnimationFrame callbacks stop until the view is
+shown.)
+
+A page with throttling off is also never recommended to be frozen. A
+view that leaves the property at its default never reaches any of this.
+SPDX-FileCopyrightText: 2026 Timedomain Inc.
+SPDX-License-Identifier: LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+(the license of the qtwebengine files this patch modifies)
+---
+ src/core/render_widget_host_view_qt.cpp       | 18 +++++++
+ src/core/render_widget_host_view_qt.h         |  1 +
+ src/core/web_contents_adapter.cpp             | 47 +++++++++++++++++++
+ src/core/web_contents_adapter.h               |  6 +++
+ src/core/web_contents_delegate_qt.cpp         |  3 ++
+ .../api/qquickwebengineview.cpp               | 34 ++++++++++++++
+ .../api/qquickwebengineview_p.h               |  5 ++
+ .../api/qquickwebengineview_p_p.h             |  1 +
+ 8 files changed, 115 insertions(+)
+
+diff --git a/src/core/render_widget_host_view_qt.cpp b/src/core/render_widget_host_view_qt.cpp
+index cb77820..50b937b 100644
+--- a/src/core/render_widget_host_view_qt.cpp
++++ b/src/core/render_widget_host_view_qt.cpp
+@@ -855,12 +855,30 @@ void RenderWidgetHostViewQt::notifyHidden()
+ {
+     if (!m_visible)
+         return;
++    // As Electron's RenderWidgetHostViewAura::HideImpl: a widget that background throttling
++    // is disabled for stays shown, and keeps producing frames.
++    if (host()->disable_hidden_)
++        return;
+     m_visible = false;
+     host()->WasHidden();
+     m_delegatedFrameHost->WasHidden(content::DelegatedFrameHost::HiddenCause::kOther);
+     m_delegatedFrameHost->DetachFromCompositor();
+ }
+ 
++// As Electron's WebContents::SetBackgroundThrottling: show a widget that is hidden when
++// throttling is disabled, and hide one that was kept shown when it is allowed again while
++// the view is hidden.
++void RenderWidgetHostViewQt::setBackgroundThrottling(bool allowed)
++{
++    host()->disable_hidden_ = !allowed;
++    if (!m_delegate)
++        return;
++    if (!allowed)
++        notifyShown();
++    else if (!m_delegate->isVisible())
++        notifyHidden();
++}
++
+ void RenderWidgetHostViewQt::ProcessAckedTouchEvent(const input::TouchEventWithLatencyInfo &touch, blink::mojom::InputEventResultState ack_result)
+ {
+     const bool eventConsumed = (ack_result == blink::mojom::InputEventResultState::kConsumed);
+diff --git a/src/core/render_widget_host_view_qt.h b/src/core/render_widget_host_view_qt.h
+index 395334f..a0355a5 100644
+--- a/src/core/render_widget_host_view_qt.h
++++ b/src/core/render_widget_host_view_qt.h
+@@ -168,6 +168,7 @@ public:
+     Compositor::Id compositorId();
+     void notifyShown();
+     void notifyHidden();
++    void setBackgroundThrottling(bool allowed);
+     bool updateScreenInfo();
+     void handleWheelEvent(QWheelEvent *);
+     void processMotionEvent(const ui::MotionEvent &motionEvent);
+diff --git a/src/core/web_contents_adapter.cpp b/src/core/web_contents_adapter.cpp
+index 5ea0939..0a2d493 100644
+--- a/src/core/web_contents_adapter.cpp
++++ b/src/core/web_contents_adapter.cpp
+@@ -41,6 +41,7 @@
+ #include "components/favicon/core/favicon_service.h"
+ #include "content/browser/renderer_host/render_view_host_impl.h"
+ #include "content/browser/renderer_host/text_input_manager.h"
++#include "content/browser/renderer_host/render_widget_host_impl.h"
+ #include "content/browser/web_contents/web_contents_impl.h"
+ #include "content/public/browser/devtools_agent_host.h"
+ #include "content/public/browser/download_manager.h"
+@@ -2140,6 +2141,9 @@ WebContentsAdapter::LifecycleState WebContentsAdapter::determineRecommendedState
+     if (isVisible())
+         return LifecycleState::Active;
+ 
++    if (!m_backgroundThrottling)
++        return LifecycleState::Active;
++
+     if (m_webContentsDelegate->loadingState() != WebContentsDelegateQt::LoadingState::Loaded)
+         return LifecycleState::Active;
+ 
+@@ -2212,6 +2216,49 @@ void WebContentsAdapter::setVisible(bool visible)
+     updateRecommendedState();
+ }
+ 
++// Electron's webPreferences backgroundThrottling, after its WebContents::SetBackgroundThrottling
++// and HandleNewRenderFrame: while throttling is disallowed, every widget of the page is kept
++// from being hidden, and every page in its frame tree treats a hidden page as a shown one.
++static void applyBackgroundThrottling(content::RenderFrameHost *frame, bool allowed)
++{
++    if (auto *view = frame->GetView())
++        static_cast<content::RenderWidgetHostImpl *>(view->GetRenderWidgetHost())->disable_hidden_ = !allowed;
++    frame->GetRenderViewHost()->SetSchedulerThrottling(allowed);
++}
++
++void WebContentsAdapter::setBackgroundThrottling(bool allowed)
++{
++    m_backgroundThrottling = allowed;
++    CHECK_INITIALIZED();
++
++    // Every local root (cross-process frame) has its own widget and RenderView; inner
++    // WebContents (guests) keep their own setting.
++    m_webContents->GetPrimaryMainFrame()->ForEachRenderFrameHostWithAction(
++            [this, allowed](content::RenderFrameHost *frame) {
++                if (content::WebContents::FromRenderFrameHost(frame) != m_webContents.get())
++                    return content::RenderFrameHost::FrameIterationAction::kSkipChildren;
++                applyBackgroundThrottling(frame, allowed);
++                return content::RenderFrameHost::FrameIterationAction::kContinue;
++            });
++    if (auto *rwhv = static_cast<RenderWidgetHostViewQt *>(m_webContents->GetRenderWidgetHostView()))
++        rwhv->setBackgroundThrottling(allowed);
++    updateRecommendedState();
++}
++
++void WebContentsAdapter::backgroundThrottlingFrameCreated(content::RenderFrameHost *frame)
++{
++    if (!m_backgroundThrottling)
++        applyBackgroundThrottling(frame, false);
++}
++
++void WebContentsAdapter::backgroundThrottlingViewChanged()
++{
++    if (m_backgroundThrottling)
++        return;
++    if (auto *rwhv = static_cast<RenderWidgetHostViewQt *>(m_webContents->GetRenderWidgetHostView()))
++        rwhv->setBackgroundThrottling(false);
++}
++
+ void WebContentsAdapter::freeze()
+ {
+     m_webContents->SetPageFrozen(true);
+diff --git a/src/core/web_contents_adapter.h b/src/core/web_contents_adapter.h
+index f23afaa..3407a2e 100644
+--- a/src/core/web_contents_adapter.h
++++ b/src/core/web_contents_adapter.h
+@@ -105,6 +105,11 @@ public:
+     bool isVisible() const;
+     void setVisible(bool visible);
+ 
++    bool backgroundThrottling() const { return m_backgroundThrottling; }
++    void setBackgroundThrottling(bool allowed);
++    void backgroundThrottlingFrameCreated(content::RenderFrameHost *frame);
++    void backgroundThrottlingViewChanged();
++
+     bool canGoBack() const;
+     bool canGoForward() const;
+     bool canGoToOffset(int) const;
+@@ -288,6 +293,7 @@ private:
+     bool m_inspector = false;
+     bool m_documentIsHandlingDrag = false;
+     QPointer<QWebEngineUrlRequestInterceptor> m_requestInterceptor;
++    bool m_backgroundThrottling = true;
+ };
+ 
+ } // namespace QtWebEngineCore
+diff --git a/src/core/web_contents_delegate_qt.cpp b/src/core/web_contents_delegate_qt.cpp
+index baa9fc8..82f2fce 100644
+--- a/src/core/web_contents_delegate_qt.cpp
++++ b/src/core/web_contents_delegate_qt.cpp
+@@ -279,6 +279,8 @@ void WebContentsDelegateQt::RenderFrameCreated(content::RenderFrameHost *render_
+     // If it's a child frame (render_widget_host_view_child_frame) install an InputEventObserver on
+     // it. Note that it is only needed for WheelEventAck.
+     RenderWidgetHostViewQt::registerInputEventObserver(web_contents(), render_frame_host);
++
++    m_viewClient->webContentsAdapter()->backgroundThrottlingFrameCreated(render_frame_host);
+ }
+ 
+ void WebContentsDelegateQt::PrimaryMainFrameRenderProcessGone(base::TerminationStatus status)
+@@ -334,6 +336,7 @@ void WebContentsDelegateQt::RenderViewHostChanged(content::RenderViewHost *, con
+         auto backgroundColor = m_viewClient->backgroundColor();
+         if (backgroundColor != Qt::white)
+             m_viewClient->webContentsAdapter()->setBackgroundColor(backgroundColor);
++        m_viewClient->webContentsAdapter()->backgroundThrottlingViewChanged();
+     }
+ }
+ 
+diff --git a/src/webenginequick/api/qquickwebengineview.cpp b/src/webenginequick/api/qquickwebengineview.cpp
+index 4f1fce6..29aa85a 100644
+--- a/src/webenginequick/api/qquickwebengineview.cpp
++++ b/src/webenginequick/api/qquickwebengineview.cpp
+@@ -1029,6 +1029,10 @@ void QQuickWebEngineViewPrivate::initializationFinished()
+     if (m_defaultAudioMuted != adapter->isAudioMuted())
+         adapter->setAudioMuted(m_defaultAudioMuted);
+ 
++    // Before the view's visibility, so that a page that starts hidden is never throttled.
++    if (!m_backgroundThrottling)
++        adapter->setBackgroundThrottling(false);
++
+     if (devToolsView && devToolsView->d_ptr->adapter)
+         adapter->openDevToolsFrontend(devToolsView->d_ptr->adapter);
+ 
+@@ -1669,6 +1673,36 @@ void QQuickWebEngineView::setAudioMuted(bool muted)
+         Q_EMIT audioMutedChanged(muted);
+ }
+ 
++/*!
++    \qmlproperty bool WebEngineView::backgroundThrottling
++    \since 6.140
++
++    Whether the page is throttled like a background tab while the view is hidden, as
++    Electron's \c backgroundThrottling web preference.
++
++    When \c false, a hidden page keeps running as a shown one does: its timers run at
++    full rate and \c document.visibilityState reports \c visible. The property can be
++    changed at any time.
++
++    The default value is \c true.
++*/
++bool QQuickWebEngineView::backgroundThrottling() const
++{
++    const Q_D(QQuickWebEngineView);
++    return d->m_backgroundThrottling;
++}
++
++void QQuickWebEngineView::setBackgroundThrottling(bool enabled)
++{
++    Q_D(QQuickWebEngineView);
++    if (d->m_backgroundThrottling == enabled)
++        return;
++    d->m_backgroundThrottling = enabled;
++    // Before initialization, initializationFinished() applies it.
++    d->adapter->setBackgroundThrottling(enabled);
++    Q_EMIT backgroundThrottlingChanged();
++}
++
+ bool QQuickWebEngineView::recentlyAudible() const
+ {
+     const Q_D(QQuickWebEngineView);
+diff --git a/src/webenginequick/api/qquickwebengineview_p.h b/src/webenginequick/api/qquickwebengineview_p.h
+index 9be5f11..98d890a 100644
+--- a/src/webenginequick/api/qquickwebengineview_p.h
++++ b/src/webenginequick/api/qquickwebengineview_p.h
+@@ -95,6 +95,7 @@ class Q_WEBENGINEQUICK_EXPORT QQuickWebEngineView : public QQuickItem {
+     Q_PROPERTY(QQmlComponent *touchHandleDelegate READ touchHandleDelegate WRITE
+                        setTouchHandleDelegate NOTIFY touchHandleDelegateChanged REVISION(0) FINAL)
+     Q_PROPERTY(QQuickWebEngineFrame mainFrame READ mainFrame FINAL REVISION(6, 8))
++    Q_PROPERTY(bool backgroundThrottling READ backgroundThrottling WRITE setBackgroundThrottling NOTIFY backgroundThrottlingChanged FINAL REVISION(6, 140))
+     QML_NAMED_ELEMENT(WebEngineView)
+     QML_ADDED_IN_VERSION(1, 0)
+     QML_EXTRA_VERSION(2, 0)
+@@ -459,6 +460,9 @@ QT_WARNING_POP
+     void setAudioMuted(bool muted);
+     bool recentlyAudible() const;
+ 
++    bool backgroundThrottling() const;
++    void setBackgroundThrottling(bool enabled);
++
+     qint64 renderProcessPid() const;
+ 
+     bool activeFocusOnPress() const;
+@@ -578,6 +582,7 @@ Q_SIGNALS:
+     Q_REVISION(6,7) void desktopMediaRequested(const QWebEngineDesktopMediaRequest &request);
+     Q_REVISION(6, 8) void printRequestedByFrame(QQuickWebEngineFrame frame);
+     Q_REVISION(6,8) void permissionRequested(QWebEnginePermission permissionRequest);
++    Q_REVISION(6, 140) void backgroundThrottlingChanged();
+ 
+ protected:
+     void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
+diff --git a/src/webenginequick/api/qquickwebengineview_p_p.h b/src/webenginequick/api/qquickwebengineview_p_p.h
+index 5f09790..9c510ca 100644
+--- a/src/webenginequick/api/qquickwebengineview_p_p.h
++++ b/src/webenginequick/api/qquickwebengineview_p_p.h
+@@ -170,6 +170,7 @@ public:
+     QPointer<QQuickWebEngineView> devToolsView;
+     uint m_webChannelWorld;
+     bool m_defaultAudioMuted;
++    bool m_backgroundThrottling = true;
+     bool m_isBeingAdopted;
+     mutable QQuickWebEngineAction *actions[QQuickWebEngineView::WebActionCount];
+     QtWebEngineCore::RenderWidgetHostViewQtDelegateItem *delegateItem = nullptr;
+-- 
+2.56.0
+

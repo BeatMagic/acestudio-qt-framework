@@ -1,0 +1,57 @@
+From e45635736cbd752587de9ea9ac9bd5bc0e919975 Mon Sep 17 00:00:00 2001
+From: shine5402 <14089306+shine5402@users.noreply.github.com>
+Date: Thu, 19 Nov 2026 12:47:14 +0800
+Subject: [PATCH 2/3] Allow keeping a RenderWidgetHost from being hidden
+
+Ported from Electron's patches/chromium/disable_hidden.patch (originally
+by Cheng Zhao), which Electron uses for its webPreferences
+backgroundThrottling option.
+
+Add RenderWidgetHostImpl::disable_hidden_. While it is set, WasHidden()
+leaves the widget shown, so the renderer keeps producing frames and its
+process, which has a shown widget, is not backgrounded.
+
+Electron's changes to RenderWidgetHostViewAura are left out: Qt
+WebEngine does not use that view, and does the equivalent in its own.
+The default, false, leaves Chromium's behavior unchanged.
+SPDX-FileCopyrightText: 2018 Electron contributors
+SPDX-FileCopyrightText: 2026 Timedomain Inc.
+SPDX-License-Identifier: BSD-3-Clause
+(the license of the Chromium files this patch modifies; the Electron patch it ports is MIT)
+---
+ .../content/browser/renderer_host/render_widget_host_impl.cc  | 4 ++++
+ .../content/browser/renderer_host/render_widget_host_impl.h   | 3 +++
+ 2 files changed, 7 insertions(+)
+
+diff --git a/src/3rdparty/chromium/content/browser/renderer_host/render_widget_host_impl.cc b/src/3rdparty/chromium/content/browser/renderer_host/render_widget_host_impl.cc
+index a6a4781..59e712a 100644
+--- a/src/3rdparty/chromium/content/browser/renderer_host/render_widget_host_impl.cc
++++ b/src/3rdparty/chromium/content/browser/renderer_host/render_widget_host_impl.cc
+@@ -856,6 +856,10 @@ void RenderWidgetHostImpl::WasHidden() {
+     return;
+   }
+ 
++  if (disable_hidden_) {
++    return;
++  }
++
+   // Cancel pending pointer lock requests, unless there's an open user prompt.
+   // Prompts should remain open and functional across tab switches.
+   if (!delegate_ || !delegate_->IsWaitingForPointerLockPrompt(this)) {
+diff --git a/src/3rdparty/chromium/content/browser/renderer_host/render_widget_host_impl.h b/src/3rdparty/chromium/content/browser/renderer_host/render_widget_host_impl.h
+index 826b4f7..75457e0 100644
+--- a/src/3rdparty/chromium/content/browser/renderer_host/render_widget_host_impl.h
++++ b/src/3rdparty/chromium/content/browser/renderer_host/render_widget_host_impl.h
+@@ -1050,6 +1050,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
+   // cpu-priority boosted to run discard logic.
+   void SetIsDiscarding(bool is_discarding);
+ 
++  // Electron: Prevents the widget from getting hidden.
++  bool disable_hidden_ = false;
++
+  protected:
+   // |routing_id| must not be IPC::mojom::kRoutingIdNone.
+   // If this object outlives |delegate|, DetachDelegate() must be called when
+-- 
+2.56.0
+
