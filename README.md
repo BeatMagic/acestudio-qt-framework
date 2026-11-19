@@ -42,6 +42,13 @@ PYTHON3=/path/to/python-with-html5lib scripts/build-webengine-macos.sh 6.12.0 6.
 scripts/package-webengine-macos.sh 6.12.0 6.140.0 <revision> <work>
 ```
 
+Windows, after `build-windows.py` with the same work dir, in an x64 MSVC developer prompt with Node.js, gperf and win_flex_bison on PATH, and a Python with html5lib. Both of the Qt's configurations, Debug and RelWithDebInfo, are built. On a Windows whose display language isn't English, Visual Studio's English language pack must be installed:
+
+```bat
+python scripts\build-webengine-windows.py --qt 6.12.0 --webengine 6.140.0 --work C:\qtw
+python scripts\package-webengine-windows.py --qt 6.12.0 --webengine 6.140.0 --revision <revision> --work C:\qtw
+```
+
 Each build is tagged `qt-<version>-<target>-<revision>` on the commit it was built from, and a Qt WebEngine build `qtwebengine-<version>-<target>-<revision>`.
 
 ## License
